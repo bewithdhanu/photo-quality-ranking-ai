@@ -1,0 +1,17 @@
+# Face recognition and detection
+insightface>=0.7.3
+onnxruntime>=1.16.0
+
+# Face mesh / landmarks (optional fallback)
+mediapipe>=0.10.0
+
+# Emotion / smile
+deepface>=0.0.79
+
+# Image and blur
+opencv-python>=4.8.0
+numpy>=1.24.0
+scikit-image>=0.21.0
+
+# CLI and progress
+tqdm>=4.66.0
