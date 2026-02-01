@@ -59,6 +59,10 @@ class PersonFinder:
         self._ref_img_path = ref_img_path
         return True
 
+    def get_reference_embedding(self) -> np.ndarray | None:
+        """Return the current reference embedding (after set_reference)."""
+        return self._ref_embedding.copy() if self._ref_embedding is not None else None
+
     def person_exists(self, img_path: str):
         """
         Check if reference person appears in image.

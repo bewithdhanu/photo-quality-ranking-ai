@@ -31,9 +31,11 @@ Given **one reference photo** of a person, this project:
 | **Pose fallback** | Assumes `face.pose` exists | **Fallback** when pose is missing (e.g. some insightface models). |
 | **First run** | Not mentioned | **README** notes that insightface downloads models on first run. |
 
-**Other suggestions**
+**Metadata cache (implemented)**
 
-- **Caching**: For large sets, you can cache face embeddings per image and only re-run “person match” when the reference changes (not implemented here to keep the script simple; you can add it later).
+- **Pre-computed metadata**: When you pass a folder to `--photos`, the tool builds and maintains a metadata file (`.photo_ranker_metadata.json`) inside that folder. It stores per-image: face embeddings, blur, pose, and emotion (happy) so that **matching and ranking use only this file** — no image loading or model inference at query time.
+- **Sync on run**: On each run, new or changed images are processed and the metadata file is updated; deleted files are removed from the cache. So the next run is fast.
+- **`--no-cache`**: Use this to ignore the cache and score all images live (slower, same results).
 - **DeepFace speed**: DeepFace loads heavy models. We use it only for the **target face crop** in single-photo scoring to keep it focused and a bit faster.
 - **Occlusion**: A better “obstacle” signal would be face visibility (e.g. MediaPipe face mesh). Here we use detection confidence and face size as proxies; you can plug in a visibility model later.
 - **Licensing**: insightface models may have non-commercial terms; check if you use this commercially.
@@ -71,6 +73,8 @@ python run_rank.py --ref person.jpg --photos ./photos/ --top 30 --output ranked.
 
 **Single folder:** all images in `--photos` are considered; subfolders are not scanned (you can extend the script to recurse).
 
+**Metadata cache (default when `--photos` is a folder):** The first run processes all images and writes `.photo_ranker_metadata.json` inside the photo folder. Later runs only process new or changed files, then match and rank from the cache (fast). Use `--no-cache` to force full recompute.
+
 ---
 
 ## How “good” is decided
@@ -95,7 +99,8 @@ photo-quality-ranking-ai/
     ├── __init__.py
     ├── person_finder.py  # Embedding + “person in photo?”
     ├── quality.py       # Blur, smile, facing camera, group quality
-    └── ranker.py        # Scoring + ranking orchestration
+    ├── metadata.py      # Pre-compute cache: load/save, sync, score from store
+    └── ranker.py        # Scoring + ranking (live and from metadata)
 ```
 
 ---
@@ -105,6 +110,6 @@ photo-quality-ranking-ai/
 - “Nice pose” is approximated (e.g. facing camera + smile), not a full pose aesthetic model.
 - Very small faces (&lt; ~40px) are ignored.
 - Group “good” is majority-facing-camera + sharp; no explicit “obstacle” or occlusion model yet.
-- DeepFace is relatively slow; for huge batches, consider caching or a lighter emotion model.
+- DeepFace is relatively slow during the initial metadata sync; after that, matching uses the cache only.
 
 This should give you a **production-style script** that runs on a single machine and ranks photos for a given person with minimal setup.

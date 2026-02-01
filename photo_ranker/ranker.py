@@ -1,5 +1,6 @@
 """
 Orchestration: combine person finder + quality signals into final score and ranking.
+Supports both live scoring and fast metadata-based ranking.
 """
 
 import os
@@ -9,6 +10,7 @@ from typing import List, Tuple
 import config as cfg
 from .person_finder import PersonFinder
 from .quality import QualityScorer
+from . import metadata as meta
 
 
 def _final_score(
@@ -84,6 +86,50 @@ def rank_photos(
         if progress_callback and total:
             progress_callback(i + 1, total)
 
+    scored.sort(key=lambda x: x[1], reverse=True)
+    if top_k is not None and top_k > 0:
+        scored = scored[:top_k]
+    return scored
+
+
+def rank_photos_from_metadata(
+    ref_img_path: str,
+    photo_folder: str,
+    metadata: dict,
+    finder: PersonFinder,
+    top_k: int | None = None,
+    progress_callback=None,
+    verbose: bool = False,
+) -> List[Tuple[str, float]]:
+    """
+    Rank photos using pre-computed metadata (no image loading or model inference).
+    Ref embedding is computed once; scores come from stored blur/pose/emotion.
+    """
+    if not finder.set_reference(ref_img_path):
+        return []
+    ref_emb = finder.get_reference_embedding()
+    if ref_emb is None:
+        return []
+    images = metadata.get("images") or {}
+    total = len(images)
+    scored: List[Tuple[str, float]] = []
+    for i, (name, entry) in enumerate(images.items()):
+        path = os.path.join(photo_folder, name)
+        if not os.path.isfile(path):
+            continue
+        faces_list = entry.get("faces") or []
+        matched_idx, best_sim = meta.find_matching_face(ref_emb, faces_list)
+        if verbose:
+            print(f"  {path}: max_similarity={best_sim:.3f}", file=sys.stderr)
+        if matched_idx is None:
+            if progress_callback and total:
+                progress_callback(i + 1, total)
+            continue
+        score = meta.score_from_metadata(entry, matched_idx)
+        if score > 0:
+            scored.append((path, score))
+        if progress_callback and total:
+            progress_callback(i + 1, total)
     scored.sort(key=lambda x: x[1], reverse=True)
     if top_k is not None and top_k > 0:
         scored = scored[:top_k]

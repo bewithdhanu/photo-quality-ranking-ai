@@ -57,9 +57,8 @@ user-data/
 .insightface/
 .deepface/
 
-# Future: metadata cache (when we add pre-computed metadata)
-# .photo_ranker_metadata.json
-# *.metadata.json
+# Metadata cache (per-album; stored inside photo folder)
+.photo_ranker_metadata.json
 
 # -----------------------------------------------------------------------------
 # Misc

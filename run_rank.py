@@ -20,7 +20,9 @@ except ImportError:
     tqdm = None
 
 from photo_ranker.person_finder import PersonFinder
-from photo_ranker.ranker import rank_photos
+from photo_ranker.quality import QualityScorer
+from photo_ranker.ranker import rank_photos, rank_photos_from_metadata
+from photo_ranker import metadata as meta
 
 # Common image extensions
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
@@ -74,6 +76,11 @@ def main():
         action="store_true",
         help="Print max similarity per image (for debugging)",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Ignore metadata cache and score all images live (slower)",
+    )
     args = parser.parse_args()
 
     if not os.path.isfile(args.ref):
@@ -91,31 +98,68 @@ def main():
 
     top_k = None if args.all else max(1, args.top)
 
-    pbar = None
-    def progress(processed: int, total: int):
-        nonlocal pbar
-        if tqdm is not None and pbar is None:
-            pbar = tqdm(total=total, desc="Scoring", unit="img")
-        if pbar is not None:
-            pbar.n = min(processed, pbar.total)
-            pbar.refresh()
+    use_metadata = (
+        not args.no_cache
+        and os.path.isdir(args.photos)
+        and len(photo_paths) > 0
+    )
+
+    def make_progress(desc: str):
+        pbar = [None]  # use list so closure can assign
+
+        def progress(processed: int, total: int):
+            if tqdm is not None and pbar[0] is None:
+                pbar[0] = tqdm(total=total, desc=desc, unit="img")
+            if pbar[0] is not None:
+                pbar[0].n = min(processed, pbar[0].total)
+                pbar[0].refresh()
+
+        def close():
+            if pbar[0] is not None:
+                pbar[0].close()
+
+        return progress, close
 
     try:
         finder = PersonFinder()
-        if not finder.set_reference(args.ref):
-            print("Error: no face detected in reference image.", file=sys.stderr)
-            sys.exit(1)
-        ranked = rank_photos(
-            args.ref,
-            photo_paths,
-            finder=finder,
-            top_k=top_k,
-            progress_callback=progress,
-            verbose=args.verbose,
-        )
+        if use_metadata:
+            quality = QualityScorer()
+            progress_sync, close_sync = make_progress("Syncing")
+            sync_meta = meta.sync_metadata(
+                args.photos,
+                finder,
+                quality,
+                IMAGE_EXTENSIONS,
+                progress_callback=progress_sync,
+            )
+            close_sync()
+            progress_rank, close_rank = make_progress("Ranking")
+            ranked = rank_photos_from_metadata(
+                args.ref,
+                args.photos,
+                sync_meta,
+                finder,
+                top_k=top_k,
+                progress_callback=progress_rank,
+                verbose=args.verbose,
+            )
+            close_rank()
+        else:
+            if not finder.set_reference(args.ref):
+                print("Error: no face detected in reference image.", file=sys.stderr)
+                sys.exit(1)
+            progress_score, close_score = make_progress("Scoring")
+            ranked = rank_photos(
+                args.ref,
+                photo_paths,
+                finder=finder,
+                top_k=top_k,
+                progress_callback=progress_score,
+                verbose=args.verbose,
+            )
+            close_score()
     finally:
-        if pbar is not None:
-            pbar.close()
+        pass
 
     if not ranked:
         print("No photos found containing the reference person (or all were filtered out).")

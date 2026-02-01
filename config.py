@@ -32,3 +32,7 @@ WEIGHT_GROUP_BLUR = 0.3
 
 # --- Emotion (smile) ---
 SMILE_DIVISOR = 100.0  # DeepFace returns 0–100; we use score/100
+
+# --- Metadata cache ---
+METADATA_FILENAME = ".photo_ranker_metadata.json"
+METADATA_VERSION = 1
