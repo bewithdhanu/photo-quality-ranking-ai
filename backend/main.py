@@ -26,6 +26,10 @@ class NameBody(BaseModel):
     name: str = ""
 
 
+class RenameAlbumBody(BaseModel):
+    name: str = ""
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     albums._ensure_albums_dir()
@@ -82,6 +86,28 @@ def api_get_album(album_id: str):
     return a
 
 
+@app.patch("/api/albums/{album_id}")
+def api_rename_album(album_id: str, body: RenameAlbumBody):
+    if not albums.get_album(album_id):
+        raise HTTPException(status_code=404, detail="Album not found")
+    try:
+        albums.rename_album(album_id, body.name)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Album not found")
+    return albums.get_album(album_id)
+
+
+@app.delete("/api/albums/{album_id}")
+def api_delete_album(album_id: str):
+    if not albums.get_album(album_id):
+        raise HTTPException(status_code=404, detail="Album not found")
+    try:
+        albums.delete_album(album_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Album not found")
+    return {"ok": True}
+
+
 @app.get("/api/albums/{album_id}/status")
 def api_album_status(album_id: str):
     return albums.get_processing_status(album_id)
@@ -123,7 +149,10 @@ def api_get_people(album_id: str):
 def api_set_person_name(album_id: str, person_index: int, body: NameBody):
     if not albums.get_album(album_id):
         raise HTTPException(status_code=404, detail="Album not found")
-    albums.set_person_name(album_id, person_index, body.name)
+    try:
+        albums.set_person_name(album_id, person_index, body.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True}
 
 
@@ -134,12 +163,41 @@ def api_get_ranked_photos(album_id: str, person_index: int, top_k: int = 200):
     return albums.get_ranked_photos(album_id, person_index, top_k=top_k)
 
 
+@app.get("/api/albums/{album_id}/photos")
+def api_list_album_photos(album_id: str):
+    if not albums.get_album(album_id):
+        raise HTTPException(status_code=404, detail="Album not found")
+    return albums.list_album_photos(album_id)
+
+
 @app.get("/api/albums/{album_id}/photos/{filename}")
 def api_serve_photo(album_id: str, filename: str):
     path = albums.get_photo_path(album_id, filename)
     if not path:
         raise HTTPException(status_code=404, detail="Photo not found")
     return FileResponse(path, media_type="image/jpeg")
+
+
+@app.delete("/api/albums/{album_id}/photos/{filename}")
+def api_delete_photo(album_id: str, filename: str):
+    if not albums.get_album(album_id):
+        raise HTTPException(status_code=404, detail="Album not found")
+    try:
+        albums.delete_photo(album_id, filename)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return {"ok": True}
+
+
+@app.delete("/api/albums/{album_id}/people/{person_index}")
+def api_delete_person_from_album(album_id: str, person_index: int):
+    if not albums.get_album(album_id):
+        raise HTTPException(status_code=404, detail="Album not found")
+    try:
+        albums.delete_person_from_album(album_id, person_index)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True}
 
 
 @app.get("/api/albums/{album_id}/faces/{crop_name}")

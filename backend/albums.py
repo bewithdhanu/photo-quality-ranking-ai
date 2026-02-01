@@ -1,5 +1,5 @@
 """
-Album storage and processing: create album, upload files, run sync, list people, names, ranked photos.
+Album storage and processing: create album, upload files, run sync, list people (global names), ranked photos.
 """
 
 import json
@@ -21,9 +21,15 @@ from photo_ranker.person_finder import PersonFinder
 from photo_ranker.quality import QualityScorer
 from photo_ranker.ranker import rank_photos_from_metadata
 
+try:
+    from backend import global_people as gp
+except ModuleNotFoundError:
+    import global_people as gp
+
 ALBUMS_DIR = os.path.join(_ROOT, "user-data", "albums")
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 ALBUM_META_FILE = ".album.json"
+FACE_CROP_PREFIX = "person_"
 
 
 def _ensure_albums_dir() -> str:
@@ -62,7 +68,13 @@ def create_album(name: str = "") -> dict:
     album_id = str(uuid.uuid4())
     path = _album_path(album_id)
     os.makedirs(path, exist_ok=True)
-    meta_data = {"name": name or "Untitled Album", "status": "pending", "person_names": {}}
+    meta_data = {
+        "name": name or "Untitled Album",
+        "status": "pending",
+        "person_names": {},
+        "person_global_ids": {},
+        "deleted_person_indices": [],
+    }
     _save_album_meta(album_id, meta_data)
     return {"id": album_id, "name": meta_data["name"], "status": meta_data["status"]}
 
@@ -78,6 +90,7 @@ def get_album(album_id: str) -> dict | None:
         "name": m.get("name", "Untitled Album"),
         "status": m.get("status", "pending"),
         "person_names": m.get("person_names", {}),
+        "person_global_ids": m.get("person_global_ids", {}),
     }
 
 
@@ -135,9 +148,21 @@ def start_processing(album_id: str) -> None:
                 progress_callback=None,
             )
             unique = uf.get_unique_faces(sync_meta, path)
+            m2 = _load_album_meta(album_id)
+            # Match clusters to global people so names carry across albums
+            person_global_ids = m2.get("person_global_ids") or {}
+            for i, u in enumerate(unique):
+                if str(i) in person_global_ids:
+                    continue
+                emb = u.get("embedding")
+                if emb is not None:
+                    global_id = gp.find_best_match(emb)
+                    if global_id:
+                        person_global_ids[str(i)] = global_id
+            m2["person_global_ids"] = person_global_ids
+            m2["deleted_person_indices"] = m2.get("deleted_person_indices") or []
             crop_dir = os.path.join(path, cfg.FACE_CROP_DIR)
             uf.save_face_crops(unique, crop_dir, size=cfg.FACE_CROP_SIZE)
-            m2 = _load_album_meta(album_id)
             m2["status"] = "done"
             _save_album_meta(album_id, m2)
         except Exception as e:
@@ -162,7 +187,7 @@ def get_processing_status(album_id: str) -> dict:
 
 
 def get_people(album_id: str) -> list[dict]:
-    """List unique people (after processing). Each: { index, crop_url_path, name?, count }."""
+    """List unique people (after processing). Each: { index, crop_url_path, name?, count, global_id? }. Excludes deleted."""
     path = _album_path(album_id)
     if not os.path.isdir(path):
         return []
@@ -173,27 +198,57 @@ def get_people(album_id: str) -> list[dict]:
     if not metadata:
         return []
     unique = uf.get_unique_faces(metadata, path)
-    person_names = m.get("person_names") or {}
+    person_global_ids = m.get("person_global_ids") or {}
+    person_names = m.get("person_names") or {}  # legacy fallback
+    deleted = set(m.get("deleted_person_indices") or [])
     out = []
     for i, u in enumerate(unique):
+        if i in deleted:
+            continue
+        global_id = person_global_ids.get(str(i))
+        name = None
+        if global_id:
+            p = gp.get_person(global_id)
+            if p:
+                name = p.get("name")
+        if name is None:
+            name = person_names.get(str(i))
+        crop_path = f"/api/albums/{album_id}/faces/person_{i}.jpg"
         out.append({
             "index": i,
-            "crop_url_path": f"/api/albums/{album_id}/faces/person_{i}.jpg",
-            "name": person_names.get(str(i)),
+            "crop_url_path": crop_path,
+            "name": name,
             "count": u.get("count", 0),
+            "global_id": global_id,
         })
     return out
 
 
 def set_person_name(album_id: str, person_index: int, name: str) -> None:
-    """Set display name for a unique person."""
+    """Set display name for a unique person (global). Creates or updates global person and links album cluster."""
+    name = (name or "").strip() or "Unnamed"
+    path = _album_path(album_id)
     m = _load_album_meta(album_id)
-    if "person_names" not in m:
-        m["person_names"] = {}
-    m["person_names"][str(person_index)] = (name or "").strip() or None
-    if m["person_names"][str(person_index)] is None:
-        del m["person_names"][str(person_index)]
-    _save_album_meta(album_id, m)
+    if m.get("status") != "done":
+        raise ValueError("Album not processed yet")
+    metadata = meta.load_metadata(path)
+    if not metadata:
+        raise ValueError("No metadata")
+    unique = uf.get_unique_faces(metadata, path)
+    if person_index < 0 or person_index >= len(unique):
+        raise ValueError("Invalid person index")
+    person_global_ids = m.get("person_global_ids") or {}
+    global_id = person_global_ids.get(str(person_index))
+    emb = unique[person_index].get("embedding")
+    if global_id:
+        gp.update_person_name(global_id, name)
+    else:
+        if emb is None:
+            raise ValueError("No embedding for this person")
+        global_id = gp.add_person(name, emb)
+        person_global_ids[str(person_index)] = global_id
+        m["person_global_ids"] = person_global_ids
+        _save_album_meta(album_id, m)
 
 
 def get_ranked_photos(album_id: str, person_index: int, top_k: int = 200) -> list[dict]:
@@ -234,7 +289,7 @@ def get_ranked_photos(album_id: str, person_index: int, top_k: int = 200) -> lis
 
 
 def get_faces_in_photo(album_id: str, filename: str) -> list[dict]:
-    """Return faces in one photo: [{ face_index, person_index, bbox, name? }]."""
+    """Return faces in one photo: [{ face_index, person_index, bbox, name? }]. Names from global people."""
     path = _album_path(album_id)
     if not os.path.isdir(path):
         return []
@@ -245,18 +300,106 @@ def get_faces_in_photo(album_id: str, filename: str) -> list[dict]:
     if not metadata:
         return []
     unique = uf.get_unique_faces(metadata, path)
-    person_names = m.get("person_names") or {}
+    person_global_ids = m.get("person_global_ids") or {}
+    person_names = m.get("person_names") or {}  # legacy fallback
     faces = uf.get_faces_in_image(metadata, unique, filename)
     out = []
     for f in faces:
         pi = f.get("person_index")
+        name = None
+        if pi is not None:
+            gid = person_global_ids.get(str(pi))
+            if gid:
+                p = gp.get_person(gid)
+                if p:
+                    name = p.get("name")
+            if name is None:
+                name = person_names.get(str(pi))
         out.append({
             "face_index": f["face_index"],
             "person_index": pi,
             "bbox": f.get("bbox", []),
-            "name": person_names.get(str(pi)) if pi is not None else None,
+            "name": name,
         })
     return out
+
+
+def rename_album(album_id: str, name: str) -> None:
+    """Update album display name."""
+    path = _album_path(album_id)
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Album {album_id} not found")
+    m = _load_album_meta(album_id)
+    m["name"] = (name or "").strip() or "Untitled Album"
+    _save_album_meta(album_id, m)
+
+
+def delete_album(album_id: str) -> None:
+    """Remove album directory and all contents."""
+    path = _album_path(album_id)
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Album {album_id} not found")
+    shutil.rmtree(path)
+
+
+def list_album_photos(album_id: str) -> list[dict]:
+    """List photo files in album. Returns [{ filename, url_path }] (excludes metadata/crops)."""
+    path = _album_path(album_id)
+    if not os.path.isdir(path):
+        return []
+    out = []
+    for name in os.listdir(path):
+        if name.startswith(".") or name == ALBUM_META_FILE:
+            continue
+        full = os.path.join(path, name)
+        if not os.path.isfile(full):
+            continue
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in IMAGE_EXTENSIONS:
+            continue
+        out.append({
+            "filename": name,
+            "url_path": f"/api/albums/{album_id}/photos/{name}",
+        })
+    return sorted(out, key=lambda x: x["filename"])
+
+
+def delete_photo(album_id: str, filename: str) -> None:
+    """Remove a photo file from the album and remove it from metadata cache."""
+    path = _album_path(album_id)
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Album {album_id} not found")
+    safe = os.path.basename(filename).strip()
+    full = os.path.join(path, safe)
+    if not os.path.isfile(full):
+        raise FileNotFoundError(f"Photo {safe} not found")
+    os.remove(full)
+    # Remove from metadata so unique faces / counts stay correct on next process
+    metadata = meta.load_metadata(path)
+    if metadata and metadata.get("images"):
+        metadata["images"].pop(safe, None)
+        meta.save_metadata(path, metadata)
+
+
+def delete_person_from_album(album_id: str, person_index: int) -> None:
+    """Remove a person from the album: hide from list, remove face crop, unlink global id."""
+    path = _album_path(album_id)
+    if not os.path.isdir(path):
+        raise FileNotFoundError(f"Album {album_id} not found")
+    m = _load_album_meta(album_id)
+    if m.get("status") != "done":
+        raise ValueError("Album not processed yet")
+    person_global_ids = m.get("person_global_ids") or {}
+    deleted = set(m.get("deleted_person_indices") or [])
+    deleted.add(person_index)
+    m["deleted_person_indices"] = sorted(deleted)
+    person_global_ids.pop(str(person_index), None)
+    m["person_global_ids"] = person_global_ids
+    _save_album_meta(album_id, m)
+    crop_dir = os.path.join(path, cfg.FACE_CROP_DIR)
+    crop_path = os.path.join(crop_dir, f"{FACE_CROP_PREFIX}{person_index}.jpg")
+    if os.path.isfile(crop_path):
+        os.remove(crop_path)
 
 
 def get_photo_path(album_id: str, filename: str) -> str | None:

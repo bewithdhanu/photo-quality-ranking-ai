@@ -14,11 +14,21 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AlbumCard } from "@/components/AlbumCard";
 import { EmptyState } from "@/components/EmptyState";
 import { PageLoader, SkeletonGrid } from "@/components/LoadingStates";
-import { getAlbums, createAlbum } from "@/lib/api";
+import { getAlbums, createAlbum, renameAlbum, deleteAlbum } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import type { Album } from "@/lib/types";
 
 export default function Home() {
   const navigate = useNavigate();
@@ -26,6 +36,13 @@ export default function Home() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [albumName, setAlbumName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [albumToRename, setAlbumToRename] = useState<Album | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [albumToDelete, setAlbumToDelete] = useState<Album | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const {
     data: albums,
@@ -54,6 +71,59 @@ export default function Home() {
       });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleRenameOpen = (album: Album) => {
+    setAlbumToRename(album);
+    setRenameValue(album.name);
+    setRenameOpen(true);
+  };
+
+  const handleRename = async () => {
+    if (!albumToRename) return;
+    setRenaming(true);
+    try {
+      await renameAlbum(albumToRename.id, renameValue);
+      queryClient.invalidateQueries({ queryKey: ["albums"] });
+      queryClient.invalidateQueries({ queryKey: ["album", albumToRename.id] });
+      setRenameOpen(false);
+      setAlbumToRename(null);
+      toast({ title: "Album renamed" });
+    } catch (err) {
+      toast({
+        title: "Failed to rename album",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setRenaming(false);
+    }
+  };
+
+  const handleDeleteOpen = (album: Album) => {
+    setAlbumToDelete(album);
+    setDeleteOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!albumToDelete) return;
+    setDeleting(true);
+    try {
+      await deleteAlbum(albumToDelete.id);
+      queryClient.invalidateQueries({ queryKey: ["albums"] });
+      setDeleteOpen(false);
+      setAlbumToDelete(null);
+      toast({ title: "Album deleted" });
+      navigate("/");
+    } catch (err) {
+      toast({
+        title: "Failed to delete album",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -147,7 +217,13 @@ export default function Home() {
       {albums && albums.length > 0 ? (
         <div className="photo-grid">
           {albums.map((album, index) => (
-            <AlbumCard key={album.id} album={album} index={index} />
+            <AlbumCard
+              key={album.id}
+              album={album}
+              index={index}
+              onRename={handleRenameOpen}
+              onDelete={handleDeleteOpen}
+            />
           ))}
         </div>
       ) : (
@@ -163,6 +239,56 @@ export default function Home() {
           }
         />
       )}
+
+      {/* Rename album dialog */}
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename album</DialogTitle>
+            <DialogDescription>
+              Enter a new name for this album.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="my-4">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Album name"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleRename} disabled={renaming}>
+              {renaming ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete album confirm */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete album?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete "{albumToDelete?.name}" and all its
+              photos. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void handleDelete()}
+            >
+              {deleting ? "Deleting..." : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

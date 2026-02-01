@@ -1,12 +1,21 @@
 import { useState, useRef, useEffect } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, X, Pencil, User, ImageOff } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, User, ImageOff, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageLoader } from "@/components/LoadingStates";
 import { EmptyState } from "@/components/EmptyState";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   getAlbum,
   getPeople,
@@ -14,6 +23,7 @@ import {
   photoUrl,
   updatePersonName,
   faceCropUrl,
+  deletePhoto,
 } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 import type { FaceInPhoto, Person } from "@/lib/types";
@@ -200,6 +210,8 @@ export default function PhotoDetail() {
   const [imageError, setImageError] = useState(false);
   const [imageRect, setImageRect] = useState<DOMRect | null>(null);
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const { data: album } = useQuery({
     queryKey: ["album", albumId],
@@ -226,6 +238,26 @@ export default function PhotoDetail() {
   const handleNameUpdated = () => {
     queryClient.invalidateQueries({ queryKey: ["people", albumId] });
     refetchFaces();
+  };
+
+  const handleDeletePhoto = async () => {
+    if (!albumId || !decodedFilename) return;
+    setDeleting(true);
+    try {
+      await deletePhoto(albumId, decodedFilename);
+      queryClient.invalidateQueries({ queryKey: ["albumPhotos", albumId] });
+      setDeleteOpen(false);
+      toast({ title: "Photo removed" });
+      navigate(`/album/${albumId}`);
+    } catch (err) {
+      toast({
+        title: "Failed to remove photo",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const handleImageLoad = () => {
@@ -277,18 +309,28 @@ export default function PhotoDetail() {
       className="space-y-8"
     >
       {/* Header */}
-      <div>
-        <button
-          onClick={() => navigate(-1)}
-          className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <button
+            onClick={() => navigate(-1)}
+            className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </button>
+          <h1 className="font-display text-2xl font-bold">Photo Details</h1>
+          <p className="mt-1 truncate text-sm text-muted-foreground">
+            {album?.name} · {decodedFilename}
+          </p>
+        </div>
+        <Button
+          variant="destructive"
+          className="gap-2"
+          onClick={() => setDeleteOpen(true)}
         >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
-        <h1 className="font-display text-2xl font-bold">Photo Details</h1>
-        <p className="mt-1 truncate text-sm text-muted-foreground">
-          {album?.name} · {decodedFilename}
-        </p>
+          <Trash2 className="h-4 w-4" />
+          Delete photo
+        </Button>
       </div>
 
       {/* Content */}
@@ -357,6 +399,23 @@ export default function PhotoDetail() {
           )}
         </div>
       </div>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this photo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove "{decodedFilename}" from the album. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button variant="destructive" disabled={deleting} onClick={() => void handleDeletePhoto()}>
+              {deleting ? "Removing..." : "Remove"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

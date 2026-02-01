@@ -1,17 +1,19 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { User } from "lucide-react";
+import { User, Trash2 } from "lucide-react";
 import { faceCropUrl } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import type { Person } from "@/lib/types";
 
 interface PersonCardProps {
   person: Person;
   albumId: string;
   index: number;
+  onDelete?: (personIndex: number) => void;
 }
 
-export function PersonCard({ person, albumId, index }: PersonCardProps) {
+export function PersonCard({ person, albumId, index, onDelete }: PersonCardProps) {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const displayName = person.name || `Person ${person.index}`;
@@ -22,10 +24,11 @@ export function PersonCard({ person, albumId, index }: PersonCardProps) {
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ delay: index * 0.03 }}
+      className="group relative overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-primary/30 hover:shadow-lg"
     >
       <Link
         to={`/album/${albumId}/person/${person.index}`}
-        className="group block overflow-hidden rounded-xl border border-border bg-card transition-all hover:border-primary/30 hover:shadow-lg"
+        className="block"
       >
         <div className="relative aspect-square overflow-hidden bg-muted">
           {!imageLoaded && !imageError && (
@@ -56,6 +59,22 @@ export function PersonCard({ person, albumId, index }: PersonCardProps) {
           </p>
         </div>
       </Link>
+      {onDelete && (
+        <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition">
+          <Button
+            variant="destructive"
+            size="icon"
+            className="h-8 w-8"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onDelete(person.index);
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </motion.div>
   );
 }
