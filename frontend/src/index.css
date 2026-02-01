@@ -1,0 +1,224 @@
+@import "@fontsource/outfit/400.css";
+@import "@fontsource/outfit/500.css";
+@import "@fontsource/outfit/600.css";
+@import "@fontsource/outfit/700.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Photo Quality Ranking - Warm Editorial Design System */
+
+@layer base {
+  :root {
+    /* Warm cream/stone palette */
+    --background: 40 30% 98%;
+    --foreground: 30 10% 12%;
+
+    --card: 40 25% 97%;
+    --card-foreground: 30 10% 12%;
+
+    --popover: 40 25% 97%;
+    --popover-foreground: 30 10% 12%;
+
+    /* Terracotta accent */
+    --primary: 18 76% 52%;
+    --primary-foreground: 40 30% 98%;
+
+    /* Warm stone secondary */
+    --secondary: 35 15% 92%;
+    --secondary-foreground: 30 10% 20%;
+
+    --muted: 35 12% 90%;
+    --muted-foreground: 30 8% 45%;
+
+    --accent: 35 20% 94%;
+    --accent-foreground: 30 10% 15%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Status colors */
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 30 10% 12%;
+    --info: 210 80% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 35 15% 88%;
+    --input: 35 15% 88%;
+    --ring: 18 76% 52%;
+
+    --radius: 0.75rem;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(30 10% 12% / 0.04);
+    --shadow-md: 0 4px 6px -1px hsl(30 10% 12% / 0.06), 0 2px 4px -2px hsl(30 10% 12% / 0.06);
+    --shadow-lg: 0 10px 15px -3px hsl(30 10% 12% / 0.08), 0 4px 6px -4px hsl(30 10% 12% / 0.08);
+    --shadow-xl: 0 20px 25px -5px hsl(30 10% 12% / 0.1), 0 8px 10px -6px hsl(30 10% 12% / 0.1);
+
+    --sidebar-background: 40 25% 97%;
+    --sidebar-foreground: 30 10% 12%;
+    --sidebar-primary: 18 76% 52%;
+    --sidebar-primary-foreground: 40 30% 98%;
+    --sidebar-accent: 35 20% 94%;
+    --sidebar-accent-foreground: 30 10% 15%;
+    --sidebar-border: 35 15% 88%;
+    --sidebar-ring: 18 76% 52%;
+  }
+
+  .dark {
+    /* Deep warm charcoal palette */
+    --background: 30 12% 8%;
+    --foreground: 35 15% 92%;
+
+    --card: 30 10% 12%;
+    --card-foreground: 35 15% 92%;
+
+    --popover: 30 10% 12%;
+    --popover-foreground: 35 15% 92%;
+
+    /* Warm amber accent in dark mode */
+    --primary: 25 90% 58%;
+    --primary-foreground: 30 12% 8%;
+
+    --secondary: 30 8% 18%;
+    --secondary-foreground: 35 15% 88%;
+
+    --muted: 30 8% 16%;
+    --muted-foreground: 35 10% 55%;
+
+    --accent: 30 8% 20%;
+    --accent-foreground: 35 15% 90%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 70% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 30 10% 12%;
+    --info: 210 80% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 30 8% 20%;
+    --input: 30 8% 20%;
+    --ring: 25 90% 58%;
+
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.2);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.3), 0 2px 4px -2px hsl(0 0% 0% / 0.2);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.35), 0 4px 6px -4px hsl(0 0% 0% / 0.25);
+    --shadow-xl: 0 20px 25px -5px hsl(0 0% 0% / 0.4), 0 8px 10px -6px hsl(0 0% 0% / 0.3);
+
+    --sidebar-background: 30 10% 10%;
+    --sidebar-foreground: 35 15% 92%;
+    --sidebar-primary: 25 90% 58%;
+    --sidebar-primary-foreground: 30 12% 8%;
+    --sidebar-accent: 30 8% 18%;
+    --sidebar-accent-foreground: 35 15% 90%;
+    --sidebar-border: 30 8% 20%;
+    --sidebar-ring: 25 90% 58%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-display font-semibold tracking-tight;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Photo grid layouts */
+  .photo-grid {
+    @apply grid gap-4;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  }
+
+  .photo-grid-sm {
+    @apply grid gap-3;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+
+  /* Face overlay utilities */
+  .face-overlay {
+    @apply absolute border-2 border-primary rounded-sm pointer-events-none;
+    box-shadow: 0 0 0 1px hsl(var(--background) / 0.3);
+  }
+
+  /* Smooth image loading */
+  .img-loading {
+    @apply bg-muted animate-pulse;
+  }
+
+  /* Hover card effect */
+  .hover-lift {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  .hover-lift:hover {
+    @apply -translate-y-1;
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Status badge styles */
+  .status-pending {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  .status-processing {
+    @apply bg-info/10 text-info;
+  }
+
+  .status-done {
+    @apply bg-success/10 text-success;
+  }
+
+  .status-error {
+    @apply bg-destructive/10 text-destructive;
+  }
+}
+
+/* Custom scrollbar */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}

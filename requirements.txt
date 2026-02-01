@@ -15,3 +15,8 @@ scikit-image>=0.21.0
 
 # CLI and progress
 tqdm>=4.66.0
+
+# Web API
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6

@@ -154,3 +154,51 @@ def save_face_crops(
         cv2.imwrite(out_path, crop)
         saved.append(out_path)
     return saved
+
+
+def get_faces_in_image(
+    metadata: dict,
+    unique_faces: List[dict],
+    filename: str,
+    threshold: float = None,
+) -> List[dict]:
+    """
+    For one image (filename), return each face with its person_index (which unique person it matches).
+    Returns list of { face_index, person_index, bbox }.
+    """
+    if threshold is None:
+        threshold = cfg.SIMILARITY_THRESHOLD
+    images = metadata.get("images") or {}
+    entry = images.get(filename)
+    if not entry:
+        return []
+    faces_list = entry.get("faces") or []
+    out = []
+    for fi, fd in enumerate(faces_list):
+        emb = fd.get("embedding")
+        if not emb or len(emb) < 2:
+            continue
+        arr = np.array(emb, dtype=np.float32)
+        norm = np.linalg.norm(arr)
+        if norm <= 0:
+            continue
+        best_person = -1
+        best_sim = threshold
+        for pi, uf in enumerate(unique_faces):
+            ref_emb = uf.get("embedding")
+            if ref_emb is None or len(ref_emb) == 0:
+                continue
+            ref_norm = np.linalg.norm(ref_emb)
+            if ref_norm <= 0:
+                continue
+            sim = float(np.dot(arr, ref_emb) / (norm * ref_norm))
+            if sim >= threshold and sim > best_sim:
+                best_sim = sim
+                best_person = pi
+        bbox = fd.get("bbox") or []
+        out.append({
+            "face_index": fi,
+            "person_index": best_person if best_person >= 0 else None,
+            "bbox": bbox,
+        })
+    return out
