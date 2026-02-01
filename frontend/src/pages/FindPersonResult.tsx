@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { UserSearch, FolderOpen, Loader2, ArrowLeft } from "lucide-react";
+import { UserSearch, FolderOpen, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getPersonAlbumsPhotos, photoUrl } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";

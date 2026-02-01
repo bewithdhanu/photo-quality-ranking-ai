@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { ArrowLeft, Check, X, Pencil, User, ImageOff, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, X, Pencil, User, ImageOff, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageLoader } from "@/components/LoadingStates";
@@ -20,6 +20,7 @@ import {
   getAlbum,
   getPeople,
   getPhotoFaces,
+  listAlbumPhotos,
   photoUrl,
   updatePersonName,
   faceCropUrl,
@@ -225,6 +226,18 @@ export default function PhotoDetail() {
     enabled: !!albumId,
   });
 
+  const { data: albumPhotos = [] } = useQuery({
+    queryKey: ["albumPhotos", albumId],
+    queryFn: () => listAlbumPhotos(albumId!),
+    enabled: !!albumId,
+  });
+
+  const currentIndex = albumPhotos.findIndex((p) => p.filename === decodedFilename);
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < albumPhotos.length - 1;
+  const prevFilename = hasPrev ? albumPhotos[currentIndex - 1].filename : null;
+  const nextFilename = hasNext ? albumPhotos[currentIndex + 1].filename : null;
+
   const {
     data: faces,
     isLoading,
@@ -306,14 +319,14 @@ export default function PhotoDetail() {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="space-y-8"
+      className="flex h-[calc(100dvh-8rem)] min-h-0 max-h-[calc(100vh-8rem)] flex-col overflow-hidden"
     >
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 pb-4">
         <div>
           <button
             onClick={() => navigate(-1)}
-            className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            className="mb-2 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -325,7 +338,7 @@ export default function PhotoDetail() {
         </div>
         <Button
           variant="destructive"
-          className="gap-2"
+          className="gap-2 shrink-0"
           onClick={() => setDeleteOpen(true)}
         >
           <Trash2 className="h-4 w-4" />
@@ -333,72 +346,138 @@ export default function PhotoDetail() {
         </Button>
       </div>
 
-      {/* Content */}
-      <div className="grid gap-8 lg:grid-cols-3">
-        {/* Image with overlays */}
-        <div className="relative lg:col-span-2">
-          <div className="relative overflow-hidden rounded-xl border border-border bg-muted">
-            {!imageLoaded && !imageError && (
-              <div className="absolute inset-0 animate-pulse bg-muted" />
+      {/* Content row: image + faces list - takes remaining space only */}
+      <div className="flex min-h-0 flex-1 gap-4 lg:gap-6">
+        {/* Image area: fills available space, never overflows */}
+        <div className="flex min-w-0 flex-1 flex-col min-h-0">
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-xl border border-border bg-muted">
+            {/* Left arrow */}
+            {hasPrev && prevFilename && (
+              <Link
+                to={`/album/${albumId}/photo/${encodeURIComponent(prevFilename)}`}
+                className="absolute left-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 shadow-md transition hover:bg-background"
+                aria-label="Previous photo"
+              >
+                <ChevronLeft className="h-5 w-5" />
+              </Link>
             )}
-            <img
-              ref={imageRef}
-              src={imageUrl}
-              alt={decodedFilename}
-              className={`w-full transition-opacity ${
-                imageLoaded ? "opacity-100" : "opacity-0"
-              }`}
-              onLoad={handleImageLoad}
-              onError={() => setImageError(true)}
-            />
-
-            {/* Face overlays */}
-            {imageLoaded && imageRect && faces && (
-              <div className="pointer-events-none absolute inset-0">
-                {faces.map((face) => (
-                  <FaceOverlay
-                    key={face.face_index}
-                    face={face}
-                    imageRect={imageRect}
-                    naturalWidth={naturalSize.width}
-                    naturalHeight={naturalSize.height}
-                  />
-                ))}
+            <div className="relative flex h-full w-full items-center justify-center bg-black">
+              {!imageLoaded && !imageError && (
+                <div className="absolute inset-0 animate-pulse bg-muted" />
+              )}
+              {/* Wrapper fills container so img is constrained; object-contain letterboxes (black on sides for vertical, top/bottom for horizontal) */}
+              <div className="relative flex h-full w-full items-center justify-center">
+                <img
+                  ref={imageRef}
+                  src={imageUrl}
+                  alt={decodedFilename}
+                  className={`max-h-full max-w-full object-contain transition-opacity ${
+                    imageLoaded ? "opacity-100" : "opacity-0"
+                  }`}
+                  onLoad={handleImageLoad}
+                  onError={() => setImageError(true)}
+                />
+                {/* Face overlays - same size as img; positioned over the img via a sibling that matches img dimensions */}
+                {imageLoaded && imageRect && faces && imageRef.current && (
+                  <div
+                    className="pointer-events-none absolute flex items-center justify-center"
+                    style={{
+                      inset: 0,
+                    }}
+                  >
+                    <div
+                      className="relative"
+                      style={{
+                        width: imageRef.current.offsetWidth,
+                        height: imageRef.current.offsetHeight,
+                      }}
+                    >
+                      {faces.map((face) => (
+                        <FaceOverlay
+                          key={face.face_index}
+                          face={face}
+                          imageRect={imageRect}
+                          naturalWidth={naturalSize.width}
+                          naturalHeight={naturalSize.height}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
+            {/* Right arrow */}
+            {hasNext && nextFilename && (
+              <Link
+                to={`/album/${albumId}/photo/${encodeURIComponent(nextFilename)}`}
+                className="absolute right-2 top-1/2 z-10 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 shadow-md transition hover:bg-background"
+                aria-label="Next photo"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </Link>
             )}
           </div>
         </div>
 
-        {/* Faces list */}
-        <div className="space-y-4">
-          <h2 className="font-display text-lg font-semibold">
+        {/* Faces list - scrollable if needed */}
+        <div className="flex w-80 shrink-0 flex-col overflow-hidden lg:w-72">
+          <h2 className="font-display text-lg font-semibold shrink-0">
             People in this photo
           </h2>
-
-          {faces && faces.length > 0 ? (
-            <div className="space-y-3">
-              {faces.map((face) => {
-                const person = people?.find(
-                  (p) => p.index === face.person_index
-                );
-                return (
-                  <FaceListItem
-                    key={face.face_index}
-                    face={face}
-                    person={person}
-                    albumId={albumId!}
-                    onNameUpdated={handleNameUpdated}
-                  />
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No faces detected in this photo.
-            </p>
-          )}
+          <div className="min-h-0 flex-1 overflow-y-auto pt-2">
+            {faces && faces.length > 0 ? (
+              <div className="space-y-3">
+                {faces.map((face) => {
+                  const person = people?.find(
+                    (p) => p.index === face.person_index
+                  );
+                  return (
+                    <FaceListItem
+                      key={face.face_index}
+                      face={face}
+                      person={person}
+                      albumId={albumId!}
+                      onNameUpdated={handleNameUpdated}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No faces detected in this photo.
+              </p>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Thumbnails - always at bottom, using remaining space */}
+      {albumPhotos.length > 1 && (
+        <div className="mt-2 shrink-0 overflow-x-auto border-t border-border pt-2">
+          <div className="flex gap-2 pb-1">
+            {albumPhotos.map((p) => {
+              const isCurrent = p.filename === decodedFilename;
+              return (
+                <Link
+                  key={p.filename}
+                  to={`/album/${albumId}/photo/${encodeURIComponent(p.filename)}`}
+                  className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-lg border-2 transition ${
+                    isCurrent
+                      ? "border-primary ring-2 ring-primary/30"
+                      : "border-transparent hover:border-muted-foreground/30"
+                  }`}
+                >
+                  <img
+                    src={photoUrl(albumId!, p.filename)}
+                    alt={p.filename}
+                    className="h-full w-full object-cover"
+                  />
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>

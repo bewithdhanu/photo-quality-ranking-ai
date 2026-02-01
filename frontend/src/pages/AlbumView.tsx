@@ -39,6 +39,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PersonCard } from "@/components/PersonCard";
 import { EmptyState } from "@/components/EmptyState";
 import { SkeletonGrid } from "@/components/LoadingStates";
@@ -70,7 +71,6 @@ export default function AlbumView() {
   const [deletePersonOpen, setDeletePersonOpen] = useState(false);
   const [personToDelete, setPersonToDelete] = useState<number | null>(null);
   const [deletingPerson, setDeletingPerson] = useState(false);
-
   const { data: album, isLoading: albumLoading } = useQuery({
     queryKey: ["album", albumId],
     queryFn: () => getAlbum(albumId!),
@@ -324,52 +324,6 @@ export default function AlbumView() {
         />
       )}
 
-      {/* Photos in album (show for any status) */}
-      {albumId && (
-        <section>
-          <h2 className="font-display text-lg font-semibold mb-3">Photos in this album</h2>
-          {photos.length > 0 ? (
-            <div className="photo-grid">
-              {photos.map((p) => (
-                <div
-                  key={p.filename}
-                  className="group relative overflow-hidden rounded-lg border border-border bg-card"
-                >
-                  <Link
-                    to={`/album/${albumId}/photo/${encodeURIComponent(p.filename)}`}
-                    className="block aspect-[4/3] overflow-hidden bg-muted"
-                  >
-                    <img
-                      src={photoUrl(albumId, p.filename)}
-                      alt={p.filename}
-                      className="h-full w-full object-cover transition group-hover:scale-105"
-                    />
-                  </Link>
-                  {status?.status === "done" && (
-                    <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition">
-                      <Button
-                        variant="destructive"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleDeletePhotoOpen(p.filename);
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  )}
-                  <p className="p-2 text-xs text-muted-foreground truncate">{p.filename}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-4">No photos in this album yet.</p>
-          )}
-        </section>
-      )}
-
       {/* Status: Error */}
       {status?.status === "error" && (
         <motion.div
@@ -395,42 +349,102 @@ export default function AlbumView() {
         </motion.div>
       )}
 
-      {/* Status: Done - People Grid + Photos */}
-      {status?.status === "done" && (
-        <>
-          <section>
-            <h2 className="font-display text-lg font-semibold mb-3">People in this album</h2>
-            {peopleLoading ? (
-              <SkeletonGrid count={6} />
-            ) : people && people.length > 0 ? (
-              <div className="photo-grid-sm">
-                {people.map((person, index) => (
-                  <PersonCard
-                    key={person.index}
-                    person={person}
-                    albumId={albumId!}
-                    index={index}
-                    onDelete={handleDeletePersonOpen}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={<Users className="h-8 w-8" />}
-                title="No faces detected"
-                description="We couldn't detect any faces in the uploaded photos. Try uploading more photos with visible faces."
-                action={
-                  <Link to={`/album/${albumId}/upload`}>
-                    <Button className="gap-2">
-                      <Upload className="h-4 w-4" />
-                      Upload More Photos
-                    </Button>
-                  </Link>
-                }
-              />
-            )}
-          </section>
-        </>
+      {/* Photos & People in tabs (show when we have album) */}
+      {albumId && (
+        <section>
+          <Tabs defaultValue="photos" className="w-full">
+            <TabsList className="mb-4">
+              <TabsTrigger value="photos" className="gap-2">
+                <ImageIcon className="h-4 w-4" />
+                Photos ({photos.length})
+              </TabsTrigger>
+              <TabsTrigger value="people" className="gap-2">
+                <Users className="h-4 w-4" />
+                People ({status?.status === "done" && people ? people.length : 0})
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="photos">
+              {photos.length > 0 ? (
+                <>
+                  <div className="photo-grid">
+                    {photos.map((p) => (
+                      <div
+                        key={p.filename}
+                        className="group relative overflow-hidden rounded-lg border border-border bg-card"
+                      >
+                        <Link
+                          to={`/album/${albumId}/photo/${encodeURIComponent(p.filename)}`}
+                          className="block aspect-[4/3] overflow-hidden bg-muted"
+                        >
+                          <img
+                            src={photoUrl(albumId, p.filename)}
+                            alt={p.filename}
+                            className="h-full w-full object-cover transition group-hover:scale-105"
+                          />
+                        </Link>
+                        {status?.status === "done" && (
+                          <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition">
+                            <Button
+                              variant="destructive"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                handleDeletePhotoOpen(p.filename);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                        <p className="p-2 text-xs text-muted-foreground truncate">{p.filename}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground py-4">No photos in this album yet.</p>
+              )}
+            </TabsContent>
+            <TabsContent value="people">
+              {status?.status !== "done" ? (
+                <p className="text-sm text-muted-foreground py-4">
+                  {status?.status === "processing"
+                    ? "Processing... People will appear here when done."
+                    : "Upload and process photos to detect people."}
+                </p>
+              ) : peopleLoading ? (
+                <SkeletonGrid count={6} />
+              ) : people && people.length > 0 ? (
+                <div className="photo-grid-sm">
+                  {people.map((person, index) => (
+                    <PersonCard
+                      key={person.index}
+                      person={person}
+                      albumId={albumId!}
+                      index={index}
+                      onDelete={handleDeletePersonOpen}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={<Users className="h-8 w-8" />}
+                  title="No faces detected"
+                  description="We couldn't detect any faces in the uploaded photos. Try uploading more photos with visible faces."
+                  action={
+                    <Link to={`/album/${albumId}/upload`}>
+                      <Button className="gap-2">
+                        <Upload className="h-4 w-4" />
+                        Upload More Photos
+                      </Button>
+                    </Link>
+                  }
+                />
+              )}
+            </TabsContent>
+          </Tabs>
+        </section>
       )}
 
       {/* Rename album dialog */}
