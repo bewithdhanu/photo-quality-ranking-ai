@@ -36,3 +36,7 @@ SMILE_DIVISOR = 100.0  # DeepFace returns 0–100; we use score/100
 # --- Metadata cache ---
 METADATA_FILENAME = ".photo_ranker_metadata.json"
 METADATA_VERSION = 1
+
+# --- Unique faces (list/select) ---
+FACE_CROP_DIR = ".photo_ranker_faces"  # Subdir inside photo folder for face crops
+FACE_CROP_SIZE = 256  # Size of saved face thumbnails

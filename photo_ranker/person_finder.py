@@ -59,6 +59,11 @@ class PersonFinder:
         self._ref_img_path = ref_img_path
         return True
 
+    def set_reference_embedding(self, embedding: np.ndarray) -> None:
+        """Set reference person from a pre-computed embedding (e.g. from unique-faces)."""
+        self._ref_embedding = np.array(embedding, dtype=np.float32).copy()
+        self._ref_img_path = None
+
     def get_reference_embedding(self) -> np.ndarray | None:
         """Return the current reference embedding (after set_reference)."""
         return self._ref_embedding.copy() if self._ref_embedding is not None else None

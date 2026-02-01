@@ -7,6 +7,7 @@ import os
 import sys
 from typing import List, Tuple
 
+import numpy as np
 import config as cfg
 from .person_finder import PersonFinder
 from .quality import QualityScorer
@@ -93,21 +94,28 @@ def rank_photos(
 
 
 def rank_photos_from_metadata(
-    ref_img_path: str,
     photo_folder: str,
     metadata: dict,
     finder: PersonFinder,
+    ref_img_path: str | None = None,
+    ref_embedding: np.ndarray | None = None,
     top_k: int | None = None,
     progress_callback=None,
     verbose: bool = False,
 ) -> List[Tuple[str, float]]:
     """
     Rank photos using pre-computed metadata (no image loading or model inference).
-    Ref embedding is computed once; scores come from stored blur/pose/emotion.
+    Provide either ref_img_path (load ref from image) or ref_embedding (use pre-computed).
     """
-    if not finder.set_reference(ref_img_path):
+    if ref_embedding is not None:
+        finder.set_reference_embedding(ref_embedding)
+        ref_emb = finder.get_reference_embedding()
+    elif ref_img_path is not None:
+        if not finder.set_reference(ref_img_path):
+            return []
+        ref_emb = finder.get_reference_embedding()
+    else:
         return []
-    ref_emb = finder.get_reference_embedding()
     if ref_emb is None:
         return []
     images = metadata.get("images") or {}

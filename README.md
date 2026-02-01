@@ -75,6 +75,16 @@ python run_rank.py --ref person.jpg --photos ./photos/ --top 30 --output ranked.
 
 **Metadata cache (default when `--photos` is a folder):** The first run processes all images and writes `.photo_ranker_metadata.json` inside the photo folder. Later runs only process new or changed files, then match and rank from the cache (fast). Use `--no-cache` to force full recompute.
 
+**Discover faces in album, then rank by selection:**
+
+1. List unique faces and save representative crops:  
+   `python run_rank.py --photos ./album --list-faces`  
+   This syncs metadata, clusters faces by identity, saves crops to `./album/.photo_ranker_faces/person_0.jpg`, `person_1.jpg`, … and prints indices and counts.
+
+2. Rank photos for one person by index:  
+   `python run_rank.py --photos ./album --select 0 --top 20`  
+   (Use `--select 1`, `--select 2`, … for other persons.)
+
 ---
 
 ## How “good” is decided

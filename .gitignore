@@ -59,6 +59,7 @@ user-data/
 
 # Metadata cache (per-album; stored inside photo folder)
 .photo_ranker_metadata.json
+.photo_ranker_faces/
 
 # -----------------------------------------------------------------------------
 # Misc
