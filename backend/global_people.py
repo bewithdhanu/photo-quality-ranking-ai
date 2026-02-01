@@ -101,21 +101,51 @@ def update_person_name(global_id: str, name: str) -> None:
 
 def find_best_match(embedding, threshold: float = None) -> str | None:
     """Find global person id with highest cosine similarity >= threshold. Returns id or None."""
+    _id, _ = find_best_match_with_score(embedding, threshold)
+    return _id
+
+
+def find_best_match_with_score(embedding, threshold: float = None) -> tuple[str | None, float]:
+    """Find best matching global person. Returns (id or None, best_similarity)."""
     if threshold is None:
         threshold = cfg.SIMILARITY_THRESHOLD
     emb_arr = np.array(_embedding_to_list(embedding), dtype=np.float32)
     if len(emb_arr) < 2:
-        return None
+        return (None, 0.0)
     data = _load()
     best_id = None
-    best_sim = threshold
+    best_sim = -1.0
     for p in data.get("people", []):
         emb_list = p.get("embedding")
         if not emb_list or len(emb_list) < 2:
             continue
         ref = np.array(emb_list, dtype=np.float32)
         sim = _cosine_similarity(emb_arr, ref)
-        if sim >= threshold and sim > best_sim:
+        if sim > best_sim:
             best_sim = sim
             best_id = p["id"]
-    return best_id
+    if best_sim >= threshold:
+        return (best_id, float(best_sim))
+    return (None, float(best_sim))
+
+
+def get_top_matches(embedding, top_k: int = 3) -> list[dict]:
+    """Return top_k global people by cosine similarity, each { id, name, similarity }. Sorted desc by similarity."""
+    emb_arr = np.array(_embedding_to_list(embedding), dtype=np.float32)
+    if len(emb_arr) < 2:
+        return []
+    data = _load()
+    scored = []
+    for p in data.get("people", []):
+        emb_list = p.get("embedding")
+        if not emb_list or len(emb_list) < 2:
+            continue
+        ref = np.array(emb_list, dtype=np.float32)
+        sim = _cosine_similarity(emb_arr, ref)
+        scored.append({
+            "id": p["id"],
+            "name": p.get("name") or "Unnamed",
+            "similarity": float(sim),
+        })
+    scored.sort(key=lambda x: x["similarity"], reverse=True)
+    return scored[:top_k]

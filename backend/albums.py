@@ -9,6 +9,8 @@ import threading
 import uuid
 from typing import Any
 
+import numpy as np
+
 # Add project root to path
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _ROOT not in __import__("sys").path:
@@ -417,3 +419,279 @@ def get_face_crop_path(album_id: str, crop_name: str) -> str | None:
     if os.path.isfile(path):
         return path
     return None
+
+
+def _embedding_to_arr(emb) -> np.ndarray:
+    """Convert embedding to float32 numpy array."""
+    if hasattr(emb, "tolist"):
+        return np.array(emb.tolist(), dtype=np.float32)
+    if isinstance(emb, (list, tuple)):
+        return np.array([float(x) for x in emb], dtype=np.float32)
+    return np.array(emb, dtype=np.float32)
+
+
+def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na <= 0 or nb <= 0:
+        return 0.0
+    return float(np.dot(a, b) / (na * nb))
+
+
+def _get_all_search_candidates() -> list[dict]:
+    """
+    Build search index: global people + every unique face from every processed album.
+    Each candidate: { id, name, embedding (np) }. id is global_id or "album:{album_id}:{person_index}".
+    """
+    candidates = []
+    # Global people
+    for p in gp.list_global_people():
+        pid = p.get("id")
+        name = p.get("name") or "Unnamed"
+        full = gp.get_person(pid)
+        if not full or not full.get("embedding"):
+            continue
+        emb = _embedding_to_arr(full["embedding"])
+        if len(emb) < 2:
+            continue
+        candidates.append({"id": pid, "name": name, "embedding": emb})
+    # Album unique faces (so same-photo-from-album matches even if person was never named)
+    _ensure_albums_dir()
+    for album_id in os.listdir(ALBUMS_DIR):
+        path = os.path.join(ALBUMS_DIR, album_id)
+        if not os.path.isdir(path) or album_id.startswith("."):
+            continue
+        m = _load_album_meta(album_id)
+        if m.get("status") != "done":
+            continue
+        metadata = meta.load_metadata(path)
+        if not metadata:
+            continue
+        unique = uf.get_unique_faces(metadata, path)
+        person_global_ids = m.get("person_global_ids") or {}
+        person_names = m.get("person_names") or {}
+        deleted = set(m.get("deleted_person_indices") or [])
+        for i, u in enumerate(unique):
+            if i in deleted:
+                continue
+            emb = u.get("embedding")
+            if emb is None or (hasattr(emb, "size") and emb.size < 2) or (isinstance(emb, (list, tuple)) and len(emb) < 2):
+                continue
+            emb_arr = _embedding_to_arr(emb)
+            global_id = person_global_ids.get(str(i))
+            name = person_names.get(str(i))
+            if global_id:
+                p = gp.get_person(global_id)
+                if p:
+                    name = p.get("name") or "Unnamed"
+            if not name:
+                name = f"Person {i}"
+            # Use global_id when linked so result is one person; use album:... when not yet named
+            cand_id = global_id if global_id else f"album:{album_id}:{i}"
+            candidates.append({"id": cand_id, "name": name, "embedding": emb_arr})
+    return candidates
+
+
+def _find_best_match_combined(embedding, threshold: float) -> tuple[str | None, float]:
+    """Best match from combined candidates (global + album faces). Returns (id, similarity)."""
+    emb_arr = _embedding_to_arr(embedding)
+    if len(emb_arr) < 2:
+        return (None, 0.0)
+    candidates = _get_all_search_candidates()
+    best_id = None
+    best_sim = -1.0
+    for c in candidates:
+        sim = _cosine_sim(emb_arr, c["embedding"])
+        if sim > best_sim:
+            best_sim = sim
+            best_id = c["id"]
+    if best_sim >= threshold:
+        return (best_id, float(best_sim))
+    return (None, float(best_sim))
+
+
+def _get_top_matches_combined(embedding, top_k: int) -> list[dict]:
+    """Top-k matches from combined candidates (dedupe by id, keep best sim). Each { id, name, similarity }."""
+    emb_arr = _embedding_to_arr(embedding)
+    if len(emb_arr) < 2:
+        return []
+    candidates = _get_all_search_candidates()
+    by_id = {}
+    for c in candidates:
+        sim = _cosine_sim(emb_arr, c["embedding"])
+        cid = c["id"]
+        if cid not in by_id or sim > by_id[cid]["similarity"]:
+            by_id[cid] = {"id": cid, "name": c["name"], "similarity": float(sim)}
+    scored = list(by_id.values())
+    scored.sort(key=lambda x: x["similarity"], reverse=True)
+    return scored[:top_k]
+
+
+def get_albums_and_photos_for_global_person(global_id: str) -> tuple[list[dict], list[dict]]:
+    """Return (albums, photos) where this global person appears. Albums: [{ id, name }]. Photos: [{ album_id, album_name, filename, url_path, score }]."""
+    albums_out = []
+    photos_out = []
+    _ensure_albums_dir()
+    for album_id in os.listdir(ALBUMS_DIR):
+        path = os.path.join(ALBUMS_DIR, album_id)
+        if not os.path.isdir(path) or album_id.startswith("."):
+            continue
+        m = _load_album_meta(album_id)
+        if m.get("status") != "done":
+            continue
+        person_global_ids = m.get("person_global_ids") or {}
+        deleted = set(m.get("deleted_person_indices") or [])
+        person_index = None
+        for idx_str, gid in person_global_ids.items():
+            if gid == global_id:
+                idx = int(idx_str)
+                if idx not in deleted:
+                    person_index = idx
+                    break
+        if person_index is None:
+            continue
+        album_name = m.get("name", "Untitled Album")
+        albums_out.append({"id": album_id, "name": album_name})
+        ranked = get_ranked_photos(album_id, person_index, top_k=500)
+        for r in ranked:
+            photos_out.append({
+                "album_id": album_id,
+                "album_name": album_name,
+                "filename": r["path"],
+                "url_path": r["url_path"],
+                "score": r.get("score"),
+            })
+    return (albums_out, photos_out)
+
+
+def get_albums_and_photos_for_album_person(album_id: str, person_index: int) -> tuple[list[dict], list[dict]]:
+    """Return (albums, photos) for one album's one person (when not in global_people)."""
+    if not get_album(album_id):
+        return ([], [])
+    m = _load_album_meta(album_id)
+    if m.get("status") != "done":
+        return ([], [])
+    deleted = set(m.get("deleted_person_indices") or [])
+    if person_index in deleted:
+        return ([], [])
+    album_name = m.get("name", "Untitled Album")
+    albums_list = [{"id": album_id, "name": album_name}]
+    ranked = get_ranked_photos(album_id, person_index, top_k=500)
+    photos_list = [
+        {"album_id": album_id, "album_name": album_name, "filename": r["path"], "url_path": r["url_path"], "score": r.get("score")}
+        for r in ranked
+    ]
+    return (albums_list, photos_list)
+
+
+def get_person_albums_photos(person_id: str) -> dict | None:
+    """
+    Return { person: { id, name }, albums, photos }.
+    person_id can be a global_id or "album:{album_id}:{person_index}" (album-only person).
+    """
+    if person_id.startswith("album:"):
+        parts = person_id.split(":", 2)
+        if len(parts) != 3:
+            return None
+        _, album_id, idx_str = parts
+        try:
+            person_index = int(idx_str)
+        except ValueError:
+            return None
+        if not get_album(album_id):
+            return None
+        m = _load_album_meta(album_id)
+        if m.get("status") != "done":
+            return None
+        deleted = set(m.get("deleted_person_indices") or [])
+        if person_index in deleted:
+            return None
+        person_names = m.get("person_names") or {}
+        name = person_names.get(str(person_index)) or f"Person {person_index}"
+        albums_list, photos_list = get_albums_and_photos_for_album_person(album_id, person_index)
+        return {
+            "person": {"id": person_id, "name": name},
+            "albums": albums_list,
+            "photos": photos_list,
+        }
+    person = gp.get_person(person_id)
+    if not person:
+        return None
+    albums_list, photos_list = get_albums_and_photos_for_global_person(person_id)
+    return {
+        "person": {"id": person["id"], "name": person.get("name") or "Unnamed"},
+        "albums": albums_list,
+        "photos": photos_list,
+    }
+
+
+def _suffix_for_image_bytes(image_bytes: bytes) -> str:
+    """Return file suffix so cv2.imread decodes correctly (JPEG/PNG/WebP/BMP)."""
+    if not image_bytes or len(image_bytes) < 12:
+        return ".jpg"
+    if image_bytes[:2] == b"\xff\xd8":
+        return ".jpg"
+    if image_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+        return ".webp"
+    if image_bytes[:2] == b"BM":
+        return ".bmp"
+    return ".jpg"
+
+
+def find_person_by_photo(image_bytes: bytes) -> dict:
+    """
+    Match an uploaded photo against global people AND all album face embeddings.
+    So same-photo-from-album matches even if the person was never named (global_people).
+    Always returns top 3 candidates. Returns { matched, person?, albums?, photos?, best_similarity?, candidates }.
+    """
+    import tempfile
+    temp_path = None
+    try:
+        suffix = _suffix_for_image_bytes(image_bytes)
+        fd, temp_path = tempfile.mkstemp(suffix=suffix)
+        try:
+            os.write(fd, image_bytes)
+        finally:
+            os.close(fd)
+        finder = PersonFinder()
+        emb = finder.get_embedding(temp_path)
+        if emb is None:
+            return {"matched": False, "candidates": []}
+        # Search combined index: global people + every album unique face
+        threshold = getattr(cfg, "FIND_PERSON_SIMILARITY_THRESHOLD", cfg.SIMILARITY_THRESHOLD)
+        best_id, best_sim = _find_best_match_combined(emb, threshold)
+        candidates = _get_top_matches_combined(emb, top_k=3)
+        candidates_rounded = [
+            {"id": c["id"], "name": c["name"], "similarity": round(c["similarity"], 4)}
+            for c in candidates
+        ]
+        if best_id is None:
+            return {
+                "matched": False,
+                "best_similarity": round(best_sim, 4),
+                "candidates": candidates_rounded,
+            }
+        result = get_person_albums_photos(best_id)
+        if not result:
+            return {
+                "matched": False,
+                "best_similarity": round(best_sim, 4),
+                "candidates": candidates_rounded,
+            }
+        return {
+            "matched": True,
+            "person": result["person"],
+            "albums": result["albums"],
+            "photos": result["photos"],
+            "best_similarity": round(best_sim, 4),
+            "candidates": candidates_rounded,
+        }
+    except Exception as e:
+        return {"matched": False, "error": str(e), "candidates": []}
+    finally:
+        if temp_path and os.path.isfile(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass

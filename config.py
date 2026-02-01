@@ -5,6 +5,7 @@ Tune these without touching the main logic.
 
 # --- Person matching (embedding similarity) ---
 SIMILARITY_THRESHOLD = 0.45  # Min cosine similarity to consider "same person" (0.45–0.6 typical)
+FIND_PERSON_SIMILARITY_THRESHOLD = 0.28  # Lower threshold for "find person by photo" (cross-photo, different crop/lighting)
 MIN_FACE_SIZE_PX = 30       # Ignore faces smaller than this (width or height)
 
 # --- Blur (Laplacian variance) ---

@@ -10,6 +10,7 @@ import AlbumView from "./pages/AlbumView";
 import Upload from "./pages/Upload";
 import PersonPhotos from "./pages/PersonPhotos";
 import PhotoDetail from "./pages/PhotoDetail";
+import FindPersonResult from "./pages/FindPersonResult";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -41,6 +42,7 @@ const App = () => (
                 path="/album/:albumId/photo/:filename"
                 element={<PhotoDetail />}
               />
+              <Route path="/find-person/result" element={<FindPersonResult />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

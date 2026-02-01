@@ -66,6 +66,32 @@ def api_health():
     return {"status": "ok", "service": "photo-quality-ranking-api"}
 
 
+# --- Find person by photo (match against global people) ---
+
+@app.post("/api/find-person")
+async def api_find_person(file: UploadFile = File(...)):
+    """Upload a photo; match face against global people. Returns matched person + albums + photos or matched: false."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file")
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}:
+        raise HTTPException(status_code=400, detail="Image file required")
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+    result = albums.find_person_by_photo(content)
+    return result
+
+
+@app.get("/api/people/{global_id}/albums-photos")
+def api_get_person_albums_photos(global_id: str):
+    """Get albums and photos for a global person (e.g. when user picks a candidate from find-person)."""
+    result = albums.get_person_albums_photos(global_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Person not found")
+    return result
+
+
 # --- Albums ---
 
 @app.get("/api/albums")
