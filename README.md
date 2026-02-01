@@ -1,50 +1,36 @@
-# Photo Quality Ranking for a Given Person
+# Photo Quality Ranking
 
-Given **one reference photo** of a person, this project:
-
-1. **Finds** all photos where that person appears (individual or group).
-2. **Classifies** each as single-person or group photo.
-3. **Scores** quality (smile/pose for singles; majority-looking-good + sharpness for groups).
-4. **Ranks** and returns the best photos first.
+Find and rank the best photos of a person across your albums. Upload photos, detect faces, name people once and have them recognized everywhere, then see quality-ranked results (smile, pose, sharpness).
 
 ---
 
-## Review of the Expert’s Approach
+## How the application works
 
-**What’s solid**
+### Web app (recommended)
 
-- **4-stage pipeline** (find person → single/group → quality signals → weighted score) is the right architecture.
-- **insightface** for recognition is a good choice (embeddings + detection in one pass).
-- **Blur via Laplacian** (OpenCV) is standard and reliable.
-- **“Majority looks good” for groups** is the right rule.
-- **No single “aesthetic” model** — combining weak signals is the correct design.
+1. **Albums** — Create albums (e.g. “Trip 2024”). Upload photos (JPEG, PNG, WebP, BMP). Start processing; the backend detects faces, builds a metadata cache, and clusters unique people per album.
 
-**Improvements added in this project**
+2. **People** — After processing, each album shows a **People** tab with detected faces. Give someone a name (e.g. “Jane”); that identity is stored globally so the same person is recognized in other albums.
 
-| Area | Expert’s suggestion | What we do |
-|------|--------------------|------------|
-| **Face size** | “Fails if face &lt; 40px” | Explicit **min face size** filter so tiny faces are skipped. |
-| **Group + emotion** | DeepFace on full image | **Crop to target person’s face** before emotion/smile so we score the right person. |
-| **Config** | Hardcoded thresholds | **Config module** so you can tune blur/smile/similarity without editing code. |
-| **CLI** | None | **CLI** with `--ref`, `--photos`, `--top`, `--output` so you can run from terminal. |
-| **Progress** | None | **tqdm** for progress over many photos. |
-| **Pose fallback** | Assumes `face.pose` exists | **Fallback** when pose is missing (e.g. some insightface models). |
-| **First run** | Not mentioned | **README** notes that insightface downloads models on first run. |
+3. **Find person by photo** — Upload one photo of a person. The app matches it against **global people** and **all album face embeddings**. You get a confident match or up to three possible matches; pick one to see that person’s albums and photos.
 
-**Metadata cache (implemented)**
+4. **Photo details & tagging** — Open any photo from an album or from Find Person. You see the image with face boxes, prev/next arrows, and bottom thumbnails. In the sidebar you can name or correct names for each face; names sync to the global registry.
 
-- **Pre-computed metadata**: When you pass a folder to `--photos`, the tool builds and maintains a metadata file (`.photo_ranker_metadata.json`) inside that folder. It stores per-image: face embeddings, blur, pose, and emotion (happy) so that **matching and ranking use only this file** — no image loading or model inference at query time.
-- **Sync on run**: On each run, new or changed images are processed and the metadata file is updated; deleted files are removed from the cache. So the next run is fast.
-- **`--no-cache`**: Use this to ignore the cache and score all images live (slower, same results).
-- **DeepFace speed**: DeepFace loads heavy models. We use it only for the **target face crop** in single-photo scoring to keep it focused and a bit faster.
-- **Occlusion**: A better “obstacle” signal would be face visibility (e.g. MediaPipe face mesh). Here we use detection confidence and face size as proxies; you can plug in a visibility model later.
-- **Licensing**: insightface models may have non-commercial terms; check if you use this commercially.
+5. **Ranked photos** — From an album’s People tab, open a person to see their **best photos** for that album, ranked by quality (smile, facing camera, sharpness; for group photos, overall group quality + sharpness).
+
+6. **Management** — Rename or delete albums, remove photos from an album, or remove a person from an album (they stay in the global list).
+
+### CLI (optional)
+
+You can run the same ranking engine from the command line with a reference photo and a folder of candidates. See [Usage](#usage) and [Project layout](#project-layout) below.
 
 ---
 
 ## Setup
 
-**Requirements:** Python 3.9+, preferably a virtualenv.
+**Requirements:** Python 3.9+ (backend), Node.js 18+ (frontend). Use a virtualenv for Python.
+
+### Backend
 
 ```bash
 cd photo-quality-ranking-ai
@@ -53,11 +39,46 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**First run:** insightface will download ONNX models (a few hundred MB) on first use. Ensure internet is available.
+**First run:** insightface downloads ONNX models (a few hundred MB) on first use. Ensure internet is available.
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+```
+
+### Run the web app
+
+**Option A — One-command setup and run (recommended)**
+
+- **Linux / macOS:**  
+  `./setup-and-run.sh`  
+  Creates venv (if needed), installs backend and frontend dependencies, starts backend and frontend, and opens the frontend in your browser. Press Ctrl+C in the terminal to stop both.
+
+- **Windows:**  
+  `setup-and-run.bat`  
+  Same flow: creates venv, installs dependencies, starts backend and frontend in separate windows, opens the browser. Close the Backend and Frontend command windows to stop.
+
+**Option B — Manual**
+
+1. **Backend** (from project root, with `.venv` active):
+
+   ```bash
+   cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+2. **Frontend** (in another terminal):
+
+   ```bash
+   cd frontend && npm run dev
+   ```
+
+3. Open **http://localhost:5173** (or the port Vite prints). Set `VITE_API_URL=http://localhost:8000` if the API runs elsewhere.
 
 ---
 
-## Usage
+## Usage (CLI)
 
 **Basic:** reference photo + folder of candidates, get top 20 ranked paths.
 
@@ -65,35 +86,31 @@ pip install -r requirements.txt
 python run_rank.py --ref path/to/person.jpg --photos path/to/photo_folder/ --top 20
 ```
 
-**With output file:** write ranked list to a text file.
+**With output file:**
 
 ```bash
 python run_rank.py --ref person.jpg --photos ./photos/ --top 30 --output ranked.txt
 ```
 
-**Single folder:** all images in `--photos` are considered; subfolders are not scanned (you can extend the script to recurse).
-
-**Metadata cache (default when `--photos` is a folder):** The first run processes all images and writes `.photo_ranker_metadata.json` inside the photo folder. Later runs only process new or changed files, then match and rank from the cache (fast). Use `--no-cache` to force full recompute.
-
 **Discover faces in album, then rank by selection:**
 
 1. List unique faces and save representative crops:  
-   `python run_rank.py --photos ./album --list-faces`  
-   This syncs metadata, clusters faces by identity, saves crops to `./album/.photo_ranker_faces/person_0.jpg`, `person_1.jpg`, … and prints indices and counts.
+   `python run_rank.py --photos ./album --list-faces`
 
 2. Rank photos for one person by index:  
-   `python run_rank.py --photos ./album --select 0 --top 20`  
-   (Use `--select 1`, `--select 2`, … for other persons.)
+   `python run_rank.py --photos ./album --select 0 --top 20`
+
+**Metadata cache:** The first run builds `.photo_ranker_metadata.json` in the photo folder. Later runs only process new or changed files. Use `--no-cache` to force full recompute.
 
 ---
 
-## How “good” is decided
+## How quality is decided
 
-- **Blur:** Laplacian variance (OpenCV). Below a threshold → score penalized or zero.
-- **Single photo:** Smile (DeepFace emotion “happy”) + facing camera (head pose from insightface) + sharpness.
-- **Group photo:** Fraction of faces that are “good” (facing camera, confident detection) + sharpness. We do **not** require the target person to be smiling in the group; we only require that the target person **exists** and that the overall group quality (majority looking at camera, no heavy blur) is high.
+- **Blur:** Laplacian variance (OpenCV). Low sharpness penalizes the score.
+- **Single photo:** Smile (DeepFace “happy”) + facing camera (insightface head pose) + sharpness.
+- **Group photo:** Fraction of faces that are “good” (facing camera, confident) + sharpness. The target person must appear; we score overall group quality and sharpness.
 
-Weights and thresholds are in `config.py`; you can tune them there.
+Weights and thresholds are in `config.py`.
 
 ---
 
@@ -103,23 +120,40 @@ Weights and thresholds are in `config.py`; you can tune them there.
 photo-quality-ranking-ai/
 ├── README.md
 ├── requirements.txt
-├── config.py           # Thresholds and weights
-├── run_rank.py         # CLI entry point
-└── photo_ranker/
-    ├── __init__.py
-    ├── person_finder.py  # Embedding + “person in photo?”
-    ├── quality.py       # Blur, smile, facing camera, group quality
-    ├── metadata.py      # Pre-compute cache: load/save, sync, score from store
-    └── ranker.py        # Scoring + ranking (live and from metadata)
+├── config.py              # Thresholds and weights
+├── run_rank.py            # CLI entry point
+├── backend/               # FastAPI web API
+│   ├── main.py            # Routes, CORS
+│   ├── albums.py          # Album CRUD, processing, find-person
+│   └── global_people.py   # Global person registry (names + embeddings)
+├── photo_ranker/          # Core engine (face detection, quality, ranking)
+│   ├── person_finder.py   # insightface: embedding, “person in photo?”
+│   ├── quality.py        # Blur, smile, facing camera, group quality
+│   ├── metadata.py       # Cache: sync, load/save, score from store
+│   ├── unique_faces.py   # Cluster faces by identity, representative crops
+│   └── ranker.py         # Scoring + ranking (live and from metadata)
+├── frontend/              # React + Vite + TypeScript
+│   └── src/
+│       ├── App.tsx        # Routes
+│       ├── lib/           # API client, types
+│       └── pages/         # Home, AlbumView, Upload, PhotoDetail, FindPersonResult, etc.
+└── docs/
+    ├── TECHNICAL.md       # Backend/frontend/architecture details
+    └── LOVABLE_UI_BUILD_PROMPT.md
 ```
+
+---
+
+## Documentation
+
+- **[docs/TECHNICAL.md](docs/TECHNICAL.md)** — Technical details: how the backend works (API, albums, global people, face matching, processing pipeline), how the frontend works (routes, API client, state), and architecture.
 
 ---
 
 ## Limitations
 
-- “Nice pose” is approximated (e.g. facing camera + smile), not a full pose aesthetic model.
-- Very small faces (&lt; ~40px) are ignored.
-- Group “good” is majority-facing-camera + sharp; no explicit “obstacle” or occlusion model yet.
-- DeepFace is relatively slow during the initial metadata sync; after that, matching uses the cache only.
-
-This should give you a **production-style script** that runs on a single machine and ranks photos for a given person with minimal setup.
+- “Nice pose” is approximated (facing camera + smile), not a full pose aesthetic model.
+- Very small faces (&lt; ~30px) are ignored.
+- Group “good” is majority-facing-camera + sharp; no explicit occlusion model.
+- DeepFace is relatively slow during initial metadata sync; after that, matching uses the cache.
+- insightface model licensing may be non-commercial; check if you use this commercially.
